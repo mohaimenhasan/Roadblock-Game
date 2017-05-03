@@ -1,0 +1,229 @@
+module FinalProject(
+		CLOCK_50,						//	On Board 50 MHz
+		// The ports below are for the VGA output. 
+		VGA_CLK,   						//	VGA Clock
+		VGA_HS,							//	VGA H_SYNC
+		VGA_VS,							//	VGA V_SYNC
+		VGA_BLANK_N,						//	VGA BLANK
+		VGA_SYNC_N,						//	VGA SYNC
+		VGA_R,   						//	VGA Red[9:0]
+		VGA_G,	 						//	VGA Green[9:0]
+		VGA_B,   						//	VGA Blue[9:0]
+		KEY,
+		SW);
+	input [9:0] SW;
+   input [3:0] KEY;
+   input CLOCK_50;				//	50 MHz
+	output		  VGA_CLK;   				//	VGA Clock
+	output			VGA_HS;					//	VGA H_SYNC
+	output			VGA_VS;					//	VGA V_SYNC
+	output	 VGA_BLANK_N;				   //	VGA BLANK
+	output	  VGA_SYNC_N;				//	VGA SYNC
+	output	 [9:0] VGA_R;   				//	VGA Red[9:0]
+	output	 [9:0] VGA_G;	 				//	VGA Green[9:0]
+	output	 [9:0] VGA_B;   				//	VGA Blue[9:0]
+		
+	wire [4:0] counter;	
+	//need a load
+	wire reset = KEY[0]; //reset everything -> black screen for now
+	wire loaddata = KEY[3]; //load
+	wire enableP;
+	assign enableP = KEY[1];
+	wire [12:0]blackcounters; //counter for black
+	wire loadxx;
+	wire blackk; 
+	wire ld_plott;
+	wire[2:0] colour = SW[9:7];
+	wire [6:0] y;
+	wire [7:0] x;
+	//left & right
+	wire [1:0]userdata = SW[1:0];
+	controller m(
+		clk, 
+		loaddata,
+		reset,
+		enableP,
+		blackcounters[12:0],
+		loadxx, 
+		blackk, 
+		ld_plott,
+		writeEn,
+		counter[4:0]
+	);
+	
+	
+	 data_path(
+    clk,
+    reset,
+	 colour[2:0],
+	 loadxx, 
+	 ld_plott, 
+	 black,	 
+    userdata[1:0],
+    colour_out,
+	 x[7:0],
+	 y[6:0],
+	 blackcounters[12:0],
+	 counter[4:0]
+	 );
+	// Create an Instance of a VGA controller - there can be only one!
+	// Define the number of colours as well as the initial background
+	// image file (.MIF) for the controller.
+	vga_adapter VGA(
+			.resetn(reset),
+			.clock(CLOCK_50),
+			.colour(colour_out),
+			.x(x),
+			.y(y),
+			.plot(writeEn),
+			/* Signals for the DAC to drive the monitor. */
+			.VGA_R(VGA_R),
+			.VGA_G(VGA_G),
+			.VGA_B(VGA_B),
+			.VGA_HS(VGA_HS),
+			.VGA_VS(VGA_VS),
+			.VGA_BLANK(VGA_BLANK_N),
+			.VGA_SYNC(VGA_SYNC_N),
+			.VGA_CLK(VGA_CLK));
+		defparam VGA.RESOLUTION = "160x120";
+		defparam VGA.MONOCHROME = "FALSE";
+		defparam VGA.BITS_PER_COLOUR_CHANNEL = 1;
+		defparam VGA.BACKGROUND_IMAGE = "black.mif";
+			
+
+endmodule 
+
+
+//Need a control module
+//Need an ALU
+//Need a data_path
+//Need a counter for the blocks coming in
+
+
+module controller(
+	input clk, //clock input
+	input load,
+	input resetn,
+	input enable,//reset input
+	input [12:0] blackCounter,
+	output reg ld_x, ld_black, ld_plot, wrEn,
+	input [4:0]counter
+	);
+	
+	reg [3:0] current_state, next_state;
+	
+	//State table
+	localparam  
+					S_CLEAR				= 4'd0, //reset
+					S_DATA				= 4'd1, //data in from user either 2'b01(right) or 2'b10(left)
+					S_WAIT				= 4'd2, //wait
+					S_DRAW				= 4'd3; //draw the square
+					
+	//State table for the moving car
+	
+	always@(*)
+	begin: state_table
+		case(current_state)
+			S_CLEAR:next_state = (blackCounter[12:0] >= 13'b1111111111111)? S_DATA:S_CLEAR; 
+			S_DATA: next_state = load? S_DATA:S_WAIT;
+			S_WAIT: next_state = enable? S_DRAW:S_WAIT;
+			S_DRAW: next_state = load? S_DATA:S_DRAW;
+			default: next_state = S_DATA;
+		endcase
+	end
+	
+			
+    // current_state registers
+    always@(posedge clk)
+    begin: state_FFs
+        if(!resetn)
+            current_state <= S_CLEAR;
+        else
+            current_state <= next_state;
+    end // state_FFS			
+
+
+	always@(*)
+	begin: enable_signals
+	
+	//default case
+	//make everything to 0 
+	ld_x = 1'b0; 
+	ld_black = 1'b0;
+	ld_plot = 1'b0;
+	wrEn = 1'b0;
+	
+		case (current_state)
+			S_CLEAR: begin
+			ld_black = 1'b1;
+			wrEn = 1'b1;
+			end
+			
+			S_DATA: begin
+			ld_x = 1'b1;
+			end
+			
+			
+			S_DRAW: begin
+			ld_plot = 1'b1;
+			wrEn = 1'b1;
+			end
+		endcase
+	end
+	
+endmodule	
+
+
+module data_path(
+    input clk,
+    input resetn,
+	 input [2:0] colour_in,
+	 input ld_x, 
+	 input ld_plot, 
+	 input ld_black,	 
+    input [1:0]user_data,
+    output reg [2:0] colour_out,
+	 output reg [7:0] x,
+	 output reg [6:0] y,
+	 output reg [12:0]blackcounter,
+	 output [4:0] counter_out
+	 );
+	 assign counter_out[4:0] = counter[4:0];
+	 reg [6:0] Xorig;
+	 reg [4:0] counter;
+	always@(posedge clk)
+	begin
+		if(!resetn) 
+				begin
+					x 	<= 7'b1001010;
+					y  <= 6'b111010;	
+				end
+			
+		else 
+			begin
+				if(ld_x) 		
+					begin
+						begin
+							if (user_data == 2'b01)
+								Xorig <= 1'b1;
+							else if(user_data == 2'b10)
+								Xorig <= (-1'b1);
+						end
+					blackcounter <= 13'b0;
+					end
+				
+				if (ld_black)
+					begin
+						blackcounter <= blackcounter+1'b1;
+						colour_out <= 3'd0;
+					end
+			
+				if (ld_plot)
+					begin
+					x <= x + Xorig;
+					colour_out <= colour_in;
+					counter <= counter + 1'b1;
+					end
+			end
+	end
+endmodule	

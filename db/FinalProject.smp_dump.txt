@@ -1,0 +1,10 @@
+
+State Machine - |FinalProject|control:c1|current_state
+Name current_state.S_RESET_BLOCK_X current_state.S_BLOCK_WAIT current_state.S_DRAW_BLOCK current_state.S_LOAD_BLOCK current_state.S_PLOT current_state.S_LOAD_X_WAIT current_state.S_LOAD_X 
+current_state.S_LOAD_X 0 0 0 0 0 0 0 
+current_state.S_LOAD_X_WAIT 0 0 0 0 0 1 1 
+current_state.S_PLOT 0 0 0 0 1 0 1 
+current_state.S_LOAD_BLOCK 0 0 0 1 0 0 1 
+current_state.S_DRAW_BLOCK 0 0 1 0 0 0 1 
+current_state.S_BLOCK_WAIT 0 1 0 0 0 0 1 
+current_state.S_RESET_BLOCK_X 1 0 0 0 0 0 1 
